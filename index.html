@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>调色盘 · 颜色选择器</title>
+<style>
+  /* ---------- 主题变量（默认暗色，data-theme=light 切换亮色） ---------- */
+  :root {
+    --card-grad: linear-gradient(165deg, #343434 0%, #2b2b2b 55%, #272727 100%);
+    --card-border: #464646;
+    --panel: #343434;
+    --line: #454545;
+    --grid: #232323;                     /* 色板网格分隔线（暗色·纯灰） */
+    --checker1: #494949;                 /* 透明棋盘格色 1（暗色·纯灰） */
+    --checker2: #363636;                 /* 透明棋盘格色 2（暗色·纯灰） */
+    --text: #f3f3f3;
+    --muted: #a4a4a4;
+    --btn-ico: #c2c2c2;
+    --btn-hover: rgba(255, 255, 255, 0.08);
+    --sw-border: rgba(255, 255, 255, 0.14);
+    --canvas-border: rgba(255, 255, 255, 0.14);
+  }
+  [data-theme="light"] {
+    --card-grad: linear-gradient(165deg, #ffffff 0%, #f2f4f8 55%, #e9edf3 100%);
+    --card-border: #b7bec9;
+    --panel: #f3f5f9;
+    --line: #c9d0da;
+    --grid: #c2c9d4;                     /* 色板网格分隔线（亮色） */
+    --checker1: #ffffff;                 /* 透明棋盘格色 1（亮色） */
+    --checker2: #e4e8ef;                 /* 透明棋盘格色 2（亮色） */
+    --text: #1b2130;
+    --muted: #5b6472;
+    --btn-ico: #454e5c;
+    --btn-hover: rgba(0, 0, 0, 0.07);
+    --sw-border: rgba(0, 0, 0, 0.16);
+    --canvas-border: rgba(0, 0, 0, 0.16);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: transparent;   /* 融合式：窗口透明，仅卡片本体带圆角 */
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--text);
+  }
+
+  .card {
+    width: 100vw;                 /* 以 v1.2.11 为蓝本，卡片铺满窗口 */
+    height: 100vh;
+    position: relative;
+    background: var(--card-grad);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: background 0.25s ease;
+  }
+  /* 内部 UI 以 20% 缩放铺满窗口，缩放自适应、不出滚动条 */
+  .scaled {
+    width: 660px;                /* 基准宽度贴合控件模块，左右间距与色板一致 */
+    height: 880px;
+    zoom: 0.8;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- 自定义标题栏（可拖拽 + 窗口控制） ---------- */
+  .titlebar {
+    height: 56px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    -webkit-app-region: drag;  /* 整条可拖动窗口 */
+    user-select: none;
+  }
+  .tb-title {
+    font-size: 16px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    padding-left: 20px;
+  }
+  .tb-controls { display: flex; margin-left: auto; }
+  .tb-btn {
+    -webkit-app-region: no-drag;  /* 按钮不被拖拽拦截 */
+    width: 58px;
+    height: 56px;
+    border: none;
+    background: transparent;
+    color: var(--btn-ico);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .tb-btn svg { display: block; width: 18px; height: 18px; }
+  #btnTheme .tb-sun { display: block; }     /* 暗色显示太阳（点击变亮） */
+  #btnTheme .tb-moon { display: none; }
+  .tb-btn:hover { background: var(--btn-hover); color: var(--text); }
+  .tb-btn.close:hover { background: #e81123; color: #fff; }
+  [data-theme="light"] #btnTheme .tb-sun { display: none; }
+  [data-theme="light"] #btnTheme .tb-moon { display: block; }  /* 亮色显示月亮 */
+
+  body.maximized .card { border-radius: 0; border: none; }
+
+  /* ---------- 隐藏 number 输入微调上下键 ---------- */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+
+  /* ---------- 主内容 ---------- */
+  .content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;            /* 隐藏溢出，杜绝右侧/底部滚动条 */
+    display: flex;
+    flex-direction: column;
+    padding: 6px 24px 24px;
+  }
+  .content h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.5px; }
+
+  /* 拾色区：色环（左）| RGB/HEX+前后景（右），整体重心居中 */
+  .pickers {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 48px;                   /* 两列间隔 */
+    margin-top: 18px;
+  }
+  .picker { text-align: center; }
+  .picker .label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 12px;
+    letter-spacing: 1px;
+  }
+  .wheel-wrap {
+    position: relative;
+    width: 410px;
+    height: 410px;
+  }
+  .wheel-wrap canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 12px;
+    cursor: default;
+    touch-action: none;
+  }
+  #svBox {
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  /* 前后景色块：RGBH 下方，两色块水平并排，居中 */
+  .fgbg-row {
+    display: flex;
+    gap: 22px;                   /* 前后景色左右间距 */
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .color-cell {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    border: 1px solid var(--canvas-border);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+    transition: transform 0.28s ease;   /* 仅保留切换放大动画，颜色即时更新无延迟 */
+  }
+  .color-cell:hover { transform: scale(1.06); }
+  .color-cell.active {                                    /* 编辑中的色块放大 */
+    transform: scale(1.28);
+    box-shadow: 0 0 0 2px #5b9bff, inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  }
+  .color-cell:not(.active):hover { transform: scale(1.06); }
+
+  /* 右侧：RGB + HEX 连体输入 */
+  .right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .rgb-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .rgb-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rgb-row span {
+    width: 26px;
+    flex: none;
+    font-weight: 600;
+    font-size: 20px;
+    text-align: center;
+  }
+  .rgb-row .rl { color: #e07a6f; }
+  .rgb-row .gl { color: #84c08a; }
+  .rgb-row .bl { color: #7d9fe0; }
+  .rgb-in {
+    width: 104px;
+    height: 46px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--text);
+    text-align: center;
+    font-size: 22px;
+    font-family: ui-monospace, Consolas, monospace;
+    outline: none;
+  }
+  .rgb-in:focus { border-color: #5b9bff; }
+  /* HEX 输入与复制图标连体 */
+  .hex-group {
+    display: flex;
+    align-items: stretch;
+    width: 150px;
+    height: 46px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    overflow: hidden;
+    background: var(--panel);
+    transition: border-color 0.15s;
+  }
+  .hex-group:focus-within { border-color: #5b9bff; }
+  .hex-in {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    text-align: center;
+    font-size: 22px;
+    font-family: ui-monospace, Consolas, monospace;
+    outline: none;
+    padding: 0 4px;
+  }
+  .copy-icon {
+    width: 32px;
+    flex: none;
+    border: none;
+    border-left: 1px solid var(--line);
+    background: transparent;
+    color: var(--btn-ico);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: background 0.12s, color 0.12s;
+  }
+  .copy-icon:hover { background: var(--btn-hover); color: var(--text); }
+  .copy-icon svg { display: block; }
+
+  /* 署名：绝对定位悬浮在拾色区右下角（RGBH 下方、贴近滑块），不参与布局、不影响位置 */
+  .credit {
+    position: absolute;
+    right: 0;
+    bottom: -12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--muted);
+    letter-spacing: 0.3px;
+    pointer-events: none;
+  }
+
+  /* 滑块区（轨道无圆角，指示器为宽竖条） */
+  .sliders { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .row .name {
+    width: 26px;
+    flex: none;
+    font-weight: 600;
+    font-size: 20px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .row input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 10px;
+    background: var(--track, #454545);
+    border-radius: 0;            /* 滑块本体无圆角 */
+    outline: none;
+    cursor: pointer;
+  }
+  .row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;                 /* 宽竖条指示器 */
+    height: 20px;
+    border-radius: 2px;
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.45);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    cursor: grab;
+  }
+  .row input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 20px;
+    border-radius: 2px;
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.45);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    cursor: grab;
+  }
+  .row .num {
+    width: 82px;
+    flex: none;
+    height: 42px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--text);
+    text-align: center;
+    font-size: 21px;
+    font-family: ui-monospace, Consolas, monospace;
+    outline: none;
+  }
+  .row .num:focus { border-color: #5b9bff; }
+  .row .unit {
+    width: 30px;
+    flex: none;
+    font-size: 21px;
+    color: var(--muted);
+  }
+
+  /* 一体式色板：固定 3 排，填满剩余高度贴底，格子呈躺着的长方形 */
+  .palette {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .palette .label {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    flex: none;
+  }
+  .palette .label b { color: var(--text); font-weight: 600; }
+  .swatches {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 2px;                    /* 网格分隔线 */
+    width: 100%;
+    background: var(--grid);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .swatch-cell {
+    background: var(--panel);    /* 空格 = 板底 */
+    cursor: pointer;
+    position: relative;
+    transition: filter 0.1s;
+  }
+  .swatch-cell.empty {
+    /* 空格显示 2×2 透明棋盘格（类似画布透明格） */
+    background-image:
+      repeating-conic-gradient(var(--checker1) 0% 25%, var(--checker2) 25% 50%);
+    background-size: 100% 100%;  /* 单个格子内恰好 2×2 */
+    background-position: 0 0;
+  }
+  .swatch-cell:hover { filter: brightness(1.12); }
+  .swatch-cell:active { filter: brightness(0.88); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="scaled">
+    <!-- 自定义标题栏 -->
+    <div class="titlebar">
+      <div class="tb-title">调色盘</div>
+      <div class="tb-controls">
+        <button class="tb-btn" id="btnTheme" aria-label="切换亮暗主题" title="切换亮暗主题">
+          <svg class="tb-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="tb-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+        <button class="tb-btn" id="btnMin" aria-label="最小化" title="最小化">
+          <svg width="11" height="11" viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+        <button class="tb-btn" id="btnMax" aria-label="最大化" title="最大化">
+          <svg width="10" height="10" viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+        <button class="tb-btn close" id="btnClose" aria-label="关闭" title="关闭">
+          <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- 色相环 + 下方前后景色块（左），RGB/HEX（右） -->
+      <section class="pickers">
+        <div class="picker">
+          <div class="wheel-wrap">
+            <canvas id="hueRing"></canvas>
+            <canvas id="svBox"></canvas>
+          </div>
+        </div>
+        <div class="picker">
+          <div class="right-col">
+            <div class="rgb-inputs">
+              <div class="rgb-row"><span class="rl">R</span><input id="rNum" class="rgb-in" type="number" min="0" max="255" step="1" aria-label="红"></div>
+              <div class="rgb-row"><span class="gl">G</span><input id="gNum" class="rgb-in" type="number" min="0" max="255" step="1" aria-label="绿"></div>
+              <div class="rgb-row"><span class="bl">B</span><input id="bNum" class="rgb-in" type="number" min="0" max="255" step="1" aria-label="蓝"></div>
+            </div>
+            <div class="hex-group">
+              <input id="hexInput" class="hex-in" type="text" spellcheck="false" autocomplete="off" placeholder="000000" aria-label="HEX">
+              <button id="copyBtn" class="copy-icon" type="button" title="复制 HEX 到剪贴板">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
+            <div class="fgbg-row">
+              <div class="color-cell fg" id="fgCell" title="前景色 · 点击切换到前景编辑"></div>
+              <div class="color-cell bg" id="bgCell" title="背景色 · 点击切换到背景编辑"></div>
+            </div>
+          </div>
+        </div>
+        <div class="credit">
+          <span>By werairPL</span>
+          <span>On DeepSeek</span>
+        </div>
+      </section>
+
+      <!-- HSV 滑块（轨道无圆角，宽竖条指示器） -->
+      <section class="sliders">
+        <div class="row">
+          <span class="name">H</span>
+          <input id="hRange" type="range" min="0" max="360" step="1" aria-label="色相">
+          <input id="hNum" class="num" type="number" min="0" max="360" step="1" aria-label="色相数值">
+          <span class="unit">°</span>
+        </div>
+        <div class="row">
+          <span class="name">S</span>
+          <input id="sRange" type="range" min="0" max="100" step="1" aria-label="饱和度">
+          <input id="sNum" class="num" type="number" min="0" max="100" step="1" aria-label="饱和度数值">
+          <span class="unit">%</span>
+        </div>
+        <div class="row">
+          <span class="name">V</span>
+          <input id="vRange" type="range" min="0" max="100" step="1" aria-label="明度">
+          <input id="vNum" class="num" type="number" min="0" max="100" step="1" aria-label="明度数值">
+          <span class="unit">%</span>
+        </div>
+      </section>
+
+      <!-- 一体式色板 -->
+      <section class="palette">
+        <div class="label"><b>左键</b>可存放与取用颜色 · <b>右键</b>清除颜色</div>
+        <div class="swatches" id="swatches"></div>
+      </section>
+    </div>
+    </div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- 状态：前景 / 背景 双槽，可切换编辑 ---------- */
+  // h: 0~360, s: 0~1, v: 0~1
+  const fgColor = { h: 200, s: 0.7, v: 1.0 };
+  const bgColor = { h: 0, s: 0, v: 1.0 };
+  let active = "fg";
+  const cur = () => (active === "fg" ? fgColor : bgColor);
+
+  /* ---------- DOM ---------- */
+  const $ = (id) => document.getElementById(id);
+  const hexInput = $("hexInput");
+  const copyBtn = $("copyBtn");
+  const fgCell = $("fgCell"), bgCell = $("bgCell");
+  const rNum = $("rNum"), gNum = $("gNum"), bNum = $("bNum");
+  const hRange = $("hRange"), sRange = $("sRange"), vRange = $("vRange");
+  const hNum = $("hNum"), sNum = $("sNum"), vNum = $("vNum");
+  const hueCanvas = $("hueRing"), svCanvas = $("svBox");
+  const swatchesEl = $("swatches");
+
+  /* ---------- 主题切换（记忆：优先配置文件，兼容 localStorage） ---------- */
+  const THEME_KEY = "cp-theme";
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* 忽略 */ }
+  }
+  function persistTheme(theme) {
+    if (!window.appConfig) return;
+    window.appConfig.load()
+      .then((cfg) => window.appConfig.save(Object.assign({}, cfg || {}, { theme: theme })))
+      .catch(() => { /* 忽略 */ });
+  }
+  function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* 忽略 */ }
+    const fallback = saved === "light" ? "light" : "dark";
+    if (window.appConfig) {
+      window.appConfig.load()
+        .then((cfg) => applyTheme(cfg && cfg.theme ? cfg.theme : fallback))
+        .catch(() => applyTheme(fallback));
+    } else {
+      applyTheme(fallback);
+    }
+  }
+  initTheme();
+  $("btnTheme").addEventListener("click", () => {
+    const curTheme = document.documentElement.getAttribute("data-theme");
+    const next = curTheme === "dark" ? "light" : "dark";
+    applyTheme(next);
+    persistTheme(next);
+  });
+
+  /* ---------- 一体色板（左键 空格存色/有色取色，右键清空） ---------- */
+  const PALETTE_KEY = "cp-palette";
+  const PALETTE_SIZE = 24;
+  let palette = [];
+  function loadPalette() {
+    try {
+      const raw = localStorage.getItem(PALETTE_KEY);
+      palette = raw ? JSON.parse(raw) : [];
+    } catch (e) { palette = []; }
+    if (!Array.isArray(palette)) palette = [];
+    palette = palette.slice(0, PALETTE_SIZE);
+    while (palette.length < PALETTE_SIZE) palette.push(null);
+  }
+  function savePalette() {
+    try { localStorage.setItem(PALETTE_KEY, JSON.stringify(palette)); } catch (e) { /* 忽略 */ }
+  }
+  function renderPalette() {
+    swatchesEl.textContent = "";
+    palette.forEach((c, i) => {
+      const cell = document.createElement("div");
+      cell.className = "swatch-cell" + (c ? "" : " empty");
+      cell.title = c ? c : "空格";
+      cell.style.background = c || "";   // 空格用棋盘格样式（empty 类）
+      cell.addEventListener("click", () => {           // 左键：有色块→取色，空格→存当前颜色
+        if (palette[i]) {
+          const rgb = hexToRgb(palette[i]);
+          if (rgb) {
+            const hsv = rgbToHsv(rgb[0], rgb[1], rgb[2]);
+            cur().h = hsv[0]; cur().s = hsv[1]; cur().v = hsv[2];
+            update();
+          }
+        } else {
+          palette[i] = rgbToHex.apply(null, currentRgb());
+          savePalette();
+          renderPalette();
+        }
+      });
+      cell.addEventListener("contextmenu", (e) => {    // 右键：清空
+        e.preventDefault();
+        palette[i] = null;
+        savePalette();
+        renderPalette();
+      });
+      swatchesEl.appendChild(cell);
+    });
+  }
+
+  /* ---------- 画布初始化（含高 DPI 适配） ---------- */
+  function setupCanvas(canvas, size) {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width = size + "px";
+    canvas.style.height = size + "px";
+    canvas._size = size; // 逻辑尺寸（绘制与指针命中均基于它）
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    return ctx;
+  }
+  const RING_OUTER = 189;              // 色相环外径（视觉半径，固定不变）
+  const RING_W = 38;                   // 环宽（加粗，内框向内收）
+  const RING_MARGIN = 16;              // 外框留边（给选择球突出空间，防止上下左右被裁剪）
+  const RING_SIZE = (RING_OUTER + RING_MARGIN) * 2; // canvas 外框尺寸
+  const SV_SIZE = 220;                 // 中心色盘 canvas 边长（含留边）
+  const RING_HANDLE_R = 20;            // 色环选择球半径（略超环宽）
+  const SV_HANDLE_R = 9;               // 色盘选择球半径（小号）
+  const SV_PAD = 11;                   // 色盘四周留边（球半径 + 描边，保证不被裁剪）
+  const hueCtx = setupCanvas(hueCanvas, RING_SIZE);
+  const svCtx = setupCanvas(svCanvas, SV_SIZE);
+
+  /* ---------- 颜色换算 ---------- */
+  function hsvToRgb(h, s, v) {
+    h = ((h % 360) + 360) % 360;
+    const c = v * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = v - c;
+    let r = 0, g = 0, b = 0;
+    if (h < 60)      { r = c; g = x; b = 0; }
+    else if (h < 120){ r = x; g = c; b = 0; }
+    else if (h < 180){ r = 0; g = c; b = x; }
+    else if (h < 240){ r = 0; g = x; b = c; }
+    else if (h < 300){ r = x; g = 0; b = c; }
+    else             { r = c; g = 0; b = x; }
+    return [
+      Math.round((r + m) * 255),
+      Math.round((g + m) * 255),
+      Math.round((b + m) * 255)
+    ];
+  }
+
+  function rgbToHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const d = max - min;
+    let h = 0;
+    if (d !== 0) {
+      if (max === r)      h = ((g - b) / d) % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else                h = (r - g) / d + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    const s = max === 0 ? 0 : d / max;
+    const v = max;
+    return [h, s, v];
+  }
+
+  function rgbToHex(r, g, b) {
+    const hx = (n) => n.toString(16).toUpperCase().padStart(2, "0");
+    return "#" + hx(r) + hx(g) + hx(b);
+  }
+
+  function hexToRgb(hex) {
+    let s = String(hex).trim().replace(/^#/, "");
+    if (s.length === 3) s = s.split("").map((c) => c + c).join("");
+    if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
+    const n = parseInt(s, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const currentRgb = () => hsvToRgb(cur().h, cur().s, cur().v);
+
+  /* ---------- 绘制 ---------- */
+  function drawHandle(ctx, x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.lineWidth = 2;           /* 灰色边框 2px */
+    ctx.strokeStyle = "#8a9098";
+    ctx.stroke();
+  }
+
+  function drawHueRing() {
+    const ctx = hueCtx, size = RING_SIZE;
+    const cx = size / 2, cy = size / 2;
+    const outer = RING_OUTER, inner = RING_OUTER - RING_W; // 环径固定，外框留有选择球突出空间
+
+    ctx.clearRect(0, 0, size, size);
+
+    // 逐段绘制彩虹环
+    const steps = 360;
+    for (let i = 0; i < steps; i++) {
+      const a0 = (i / steps) * Math.PI * 2 - Math.PI / 2;
+      const a1 = ((i + 1) / steps) * Math.PI * 2 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outer, a0, a1);
+      ctx.arc(cx, cy, inner, a1, a0, true);
+      ctx.closePath();
+      ctx.fillStyle = "hsl(" + (i / steps) * 360 + ", 100%, 50%)";
+      ctx.fill();
+    }
+
+    // 环边界线（外圈 + 内圈）
+    ctx.beginPath();
+    ctx.arc(cx, cy, outer, 0, Math.PI * 2);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(0,0,0,0.4)";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, inner, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 当前色相指针（直径略超环宽）
+    const ang = (cur().h / 360) * Math.PI * 2 - Math.PI / 2;
+    const mr = (outer + inner) / 2;
+    drawHandle(ctx, cx + Math.cos(ang) * mr, cy + Math.sin(ang) * mr, RING_HANDLE_R);
+  }
+
+  function drawSv() {
+    const ctx = svCtx, size = SV_SIZE;
+    const pad = SV_PAD, area = size - pad * 2; // 四周留边（含球描边），选择球不会被裁剪
+
+    ctx.clearRect(0, 0, size, size); // 清空整张画布，避免选择球在留边区留下拖影
+
+    // 底 = 纯色相（s=1, v=1）
+    ctx.fillStyle = "hsl(" + cur().h + ", 100%, 50%)";
+    ctx.fillRect(pad, pad, area, area);
+
+    // 横向：白 → 透明（饱和度 0 → 1）
+    let g = ctx.createLinearGradient(pad, pad, pad + area, pad);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(pad, pad, area, area);
+
+    // 纵向：透明 → 黑（明度 1 → 0）
+    g = ctx.createLinearGradient(pad, pad, pad, pad + area);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, "rgba(0,0,0,1)");
+    ctx.fillStyle = g;
+    ctx.fillRect(pad, pad, area, area);
+
+    // 色盘边界线
+    ctx.strokeStyle = "rgba(0,0,0,0.4)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(pad, pad, area, area);
+
+    // 当前 S/V 指针（球完整覆盖于色盘）
+    drawHandle(ctx, pad + cur().s * area, pad + (1 - cur().v) * area, SV_HANDLE_R);
+  }
+
+  /* ---------- 滑块轨道渐变 ---------- */
+  function applyTracks() {
+    // 色相：固定彩虹
+    let stops = [];
+    for (let i = 0; i <= 360; i += 30) {
+      stops.push("hsl(" + i + ",100%,50%) " + (i / 360 * 100) + "%");
+    }
+    hRange.style.background = "linear-gradient(to right, " + stops.join(",") + ")";
+
+    // 饱和度滑块：固定 h、v，s 从 0→100% 逐段精确取色（HSV→RGB，避免 HSL 白色失真）
+    const seg = 12;
+    stops = [];
+    for (let i = 0; i <= seg; i++) {
+      const s = i / seg;
+      const rgb = hsvToRgb(cur().h, s, cur().v);
+      stops.push("rgb(" + rgb.join(",") + ") " + (i / seg * 100) + "%");
+    }
+    sRange.style.background = "linear-gradient(to right, " + stops.join(",") + ")";
+
+    // 亮度滑块：固定 h、s，v 从 0→100% 逐段精确取色
+    stops = [];
+    for (let i = 0; i <= seg; i++) {
+      const v = i / seg;
+      const rgb = hsvToRgb(cur().h, cur().s, v);
+      stops.push("rgb(" + rgb.join(",") + ") " + (i / seg * 100) + "%");
+    }
+    vRange.style.background = "linear-gradient(to right, " + stops.join(",") + ")";
+  }
+
+  /* ---------- 统一刷新 ---------- */
+  function update() {
+    const [r, g, b] = currentRgb();
+    const hex = rgbToHex(r, g, b);
+
+    // 前景/背景色块：各自独立显示，高亮当前编辑槽
+    const fgRgb = hsvToRgb(fgColor.h, fgColor.s, fgColor.v);
+    const bgRgb = hsvToRgb(bgColor.h, bgColor.s, bgColor.v);
+    fgCell.style.background = rgbToHex(fgRgb[0], fgRgb[1], fgRgb[2]);
+    bgCell.style.background = rgbToHex(bgRgb[0], bgRgb[1], bgRgb[2]);
+    fgCell.classList.toggle("active", active === "fg");
+    bgCell.classList.toggle("active", active === "bg");
+
+    // 数值输入（正在编辑的框不覆盖，避免打断输入）
+    const ae = document.activeElement;
+    if (ae !== rNum) rNum.value = r;
+    if (ae !== gNum) gNum.value = g;
+    if (ae !== bNum) bNum.value = b;
+    if (ae !== hexInput) hexInput.value = hex;
+    if (ae !== hNum) hNum.value = Math.round(cur().h);
+    if (ae !== sNum) sNum.value = Math.round(cur().s * 100);
+    if (ae !== vNum) vNum.value = Math.round(cur().v * 100);
+
+    // 滑块
+    hRange.value = cur().h;
+    sRange.value = cur().s * 100;
+    vRange.value = cur().v * 100;
+
+    applyTracks();
+    drawHueRing();
+    drawSv();
+  }
+
+  /* ---------- 指针交互 ---------- */
+  function pointerPos(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const size = canvas._size || rect.width;
+    const scale = rect.width / size; // zoom 缩放比，映射回逻辑坐标
+    return {
+      x: (e.clientX - rect.left) / scale,
+      y: (e.clientY - rect.top) / scale
+    };
+  }
+
+  function setHueFromPointer(e, isDragging) {
+    const size = RING_SIZE, cx = size / 2, cy = size / 2;
+    const p = pointerPos(e, hueCanvas);
+    const dx = p.x - cx, dy = p.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // 仅在初始点按时要求落在环内；拖动中允许移出环外继续调整
+    if (!isDragging && dist > RING_OUTER + RING_MARGIN) return false;
+    const ang = Math.atan2(dy, dx) + Math.PI / 2; // 0° 在正上方
+    cur().h = (ang * 180 / Math.PI + 360) % 360;
+    update();
+    return true;
+  }
+
+  function setSvFromPointer(e) {
+    const size = SV_SIZE, pad = SV_PAD, area = size - pad * 2;
+    const p = pointerPos(e, svCanvas);
+    cur().s = clamp((p.x - pad) / area, 0, 1);
+    cur().v = clamp(1 - (p.y - pad) / area, 0, 1);
+    update();
+  }
+
+  function bindDrag(canvas, onMove) {
+    let dragging = false;
+    canvas.addEventListener("pointerdown", (e) => {
+      // 初始点按：命中则开始拖动，未命中（如点环外）则不启动
+      if (onMove(e, false) === false) return;
+      dragging = true;
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (dragging) onMove(e, true); // 拖动中允许移出画布边界继续
+    });
+    ["pointerup", "pointercancel"].forEach((t) =>
+      canvas.addEventListener(t, () => { dragging = false; })
+    );
+  }
+  bindDrag(hueCanvas, setHueFromPointer);
+  bindDrag(svCanvas, setSvFromPointer);
+
+  /* ---------- 前景/背景交互：点击切换当前编辑槽 ---------- */
+  fgCell.addEventListener("click", () => {
+    if (active !== "fg") { active = "fg"; update(); }
+  });
+  bgCell.addEventListener("click", () => {
+    if (active !== "bg") { active = "bg"; update(); }
+  });
+
+  /* ---------- RGB 键盘输入（编辑当前活动槽） ---------- */
+  function applyRgbFromInputs() {
+    const r = parseInt(rNum.value, 10);
+    const g = parseInt(gNum.value, 10);
+    const b = parseInt(bNum.value, 10);
+    if ([r, g, b].some(isNaN)) return;
+    const hsv = rgbToHsv(clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255));
+    cur().h = hsv[0]; cur().s = hsv[1]; cur().v = hsv[2];
+    update();
+  }
+  [rNum, gNum, bNum].forEach((el) => {
+    el.addEventListener("input", applyRgbFromInputs);
+    el.addEventListener("change", applyRgbFromInputs);
+  });
+
+  /* ---------- HEX 输入 ---------- */
+  function applyHex(text) {
+    const rgb = hexToRgb(text);
+    if (!rgb) return false;
+    const hsv = rgbToHsv(rgb[0], rgb[1], rgb[2]);
+    cur().h = hsv[0]; cur().s = hsv[1]; cur().v = hsv[2];
+    update();
+    return true;
+  }
+  hexInput.addEventListener("input", () => { applyHex(hexInput.value); });
+  hexInput.addEventListener("change", () => {
+    if (!applyHex(hexInput.value)) update(); // 非法值：回退到当前颜色
+  });
+
+  /* ---------- HSV 滑块与数值输入 ---------- */
+  function bindNum(numInput, rangeInput, apply) {
+    numInput.addEventListener("input", () => {
+      const v = parseFloat(numInput.value);
+      if (!isNaN(v)) { apply(v); update(); }
+    });
+    numInput.addEventListener("change", () => {
+      const v = parseFloat(numInput.value);
+      apply(isNaN(v) ? 0 : v);
+      update();
+    });
+    rangeInput.addEventListener("input", () => {
+      apply(parseFloat(rangeInput.value));
+      update();
+    });
+  }
+  bindNum(hNum, hRange, (v) => { cur().h = clamp(v, 0, 360); });
+  bindNum(sNum, sRange, (v) => { cur().s = clamp(v / 100, 0, 1); });
+  bindNum(vNum, vRange, (v) => { cur().v = clamp(v / 100, 0, 1); });
+
+  /* ---------- 复制（HEX 连体图标） ---------- */
+  copyBtn.addEventListener("click", () => {
+    const hex = rgbToHex.apply(null, currentRgb());
+    const done = () => {
+      copyBtn.style.color = "#7ecb8f";
+      setTimeout(() => { copyBtn.style.color = ""; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(hex).then(done).catch(done);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = hex;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) { done(); }
+      document.body.removeChild(ta);
+    }
+  });
+
+  /* ---------- 窗口控制（无边框标题栏按钮） ---------- */
+  if (window.winCtl) {
+    $("btnMin").addEventListener("click", () => window.winCtl.minimize());
+    $("btnMax").addEventListener("click", () => window.winCtl.toggleMaximize());
+    $("btnClose").addEventListener("click", () => window.winCtl.close());
+    window.winCtl.onMaximizeChange((isMax) => {
+      document.body.classList.toggle("maximized", isMax);
+    });
+  }
+
+  /* ---------- 自适应缩放（窗口锁定比例，UI 跟随窗口尺寸） ---------- */
+  const scaledEl = document.querySelector(".scaled");
+  function applyZoom() {
+    const w = window.innerWidth, h = window.innerHeight;
+    scaledEl.style.zoom = Math.min(w / 660, h / 880);
+  }
+  window.addEventListener("resize", applyZoom);
+
+  /* ---------- 启动 ---------- */
+  applyZoom();
+  loadPalette();
+  renderPalette();
+  update();
+})();
+</script>
+</body>
+</html>

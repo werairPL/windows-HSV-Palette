@@ -1,0 +1,42 @@
+{
+  "name": "color-picker",
+  "version": "1.6.19",
+  "description": "调色盘 - 便携版颜色选择器",
+  "main": "main.js",
+  "author": "deepseek娘",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.deepseek.colorpicker",
+    "productName": "ColorPortable",
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*"
+    ],
+    "directories": {
+      "output": "./_out"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "ColorPortable.exe"
+    }
+  }
+}
