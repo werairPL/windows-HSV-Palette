@@ -1,6 +1,6 @@
 # windows-HSV-Palette
 适用于windows系统的便携版HSV调色盘
-![none](image/22Day_16'16'39_315.png)
+![none](image/111.jpg)
 支持亮暗主题切换与记忆  
 窗口大小可调整，支持记忆  
 可切换前景色与后景色  
